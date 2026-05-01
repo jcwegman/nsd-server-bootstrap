@@ -1,4 +1,4 @@
-# NSD Server Init
+# NSD Server Bootstrap
 
 Initialization scripts for a basic NSD server on Ubuntu 24.04 LTS.
 
