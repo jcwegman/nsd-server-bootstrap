@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Build and install NSD from source on Ubuntu.
-# This follows the official Ubuntu build steps using NSD 4.14.3 by default.
+# This follows the official Ubuntu build steps using NSD 4.14.2 by default.
 # Run it as root, or as a sudo-capable user.
 
 set -Eeuo pipefail
@@ -67,6 +67,44 @@ run_as_root() {
     "$@"
   else
     sudo "$@"
+  fi
+}
+
+# Disable Ubuntu's local resolver and install a static upstream resolver.
+configure_system_dns() {
+  local hostname_value
+  local hosts_entry
+  local resolver_tmp
+
+  print_header "Configuring system DNS"
+
+  if command -v systemctl >/dev/null 2>&1 && systemctl cat systemd-resolved.service >/dev/null 2>&1; then
+    print_step "Stopping systemd-resolved"
+    run_as_root systemctl stop systemd-resolved
+    print_step "Disabling systemd-resolved"
+    run_as_root systemctl disable systemd-resolved
+    print_success "systemd-resolved stopped and disabled."
+  else
+    print_warning "systemd-resolved service not found, skipping."
+  fi
+
+  print_step "Replacing /etc/resolv.conf"
+  resolver_tmp="$(mktemp)"
+  printf 'nameserver 8.8.8.8\n' > "${resolver_tmp}"
+  run_as_root rm -f /etc/resolv.conf
+  run_as_root install -m 644 "${resolver_tmp}" /etc/resolv.conf
+  rm -f "${resolver_tmp}"
+  print_success "/etc/resolv.conf now uses nameserver 8.8.8.8."
+
+  hostname_value="$(hostname)"
+  hosts_entry="127.0.1.1 ${hostname_value}"
+
+  if grep -Fxq "${hosts_entry}" /etc/hosts; then
+    print_warning "/etc/hosts already contains '${hosts_entry}'."
+  else
+    print_step "Adding '${hosts_entry}' to /etc/hosts"
+    printf '%s\n' "${hosts_entry}" | run_as_root tee -a /etc/hosts >/dev/null
+    print_success "Added hostname entry to /etc/hosts."
   fi
 }
 
@@ -184,6 +222,7 @@ main() {
   require_command apt
   require_command tar
 
+  configure_system_dns
   install_dependencies
   require_command dig
   require_command wget
